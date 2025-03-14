@@ -97,9 +97,7 @@ A2: [Detailed answer with code examples when relevant]
 ...and so on until Q${count}.
 `;
 
-  // We're using the generateCode method, but we're actually generating QA pairs
-  // This is fine because the method just sends a prompt to the LLM and returns the response
-  return await provider.generateCode(prompt);
+  return await provider.generateResponse(prompt);
 }
 
 /**

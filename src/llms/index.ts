@@ -13,7 +13,7 @@ export interface LLMProvider {
    * @param prompt The prompt to send to the LLM
    * @returns The generated code
    */
-  generateCode(prompt: string): Promise<string>;
+  generateResponse(prompt: string): Promise<string>;
 
   /**
    * Get all available models for this provider

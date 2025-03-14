@@ -1,8 +1,14 @@
 // Load environment variables from .env file
 import "dotenv/config";
 
-import { getAllLLMProviders } from "./src/llms";
+import { getQuestionsForEntry } from "./src/generate";
+import type { QAPair } from "./src/generate";
 import process from "node:process";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+// Minimum content size (in characters) to consider a documentation page valid
+const MIN_CONTENT_SIZE = 100;
 
 /**
  * Fetches the Svelte documentation from the specified URL
@@ -51,30 +57,125 @@ function parseSvelteDocs(
 }
 
 /**
- * Main function to run the benchmark
+ * Ensures the output directory exists
+ * @param dirPath Path to the directory
+ */
+async function ensureDirectoryExists(dirPath: string): Promise<void> {
+  try {
+    await fs.mkdir(dirPath, { recursive: true });
+  } catch (error) {
+    console.error(`Error creating directory ${dirPath}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Writes question-answer pairs to a JSONL file
+ * @param outputPath Path to the output file
+ * @param entries Array of entries with question-answer pairs
+ */
+async function writeToJSONL(
+  outputPath: string,
+  entries: Array<{ entry: string; qaPairs: QAPair[] }>
+): Promise<void> {
+  try {
+    // Ensure the output directory exists
+    await ensureDirectoryExists(path.dirname(outputPath));
+
+    // Create the JSONL content
+    const jsonlContent = entries
+      .flatMap(({ entry, qaPairs }) =>
+        qaPairs.map((qa) => ({
+          source: entry,
+          question: qa.question,
+          answer: qa.answer,
+        }))
+      )
+      .map((item) => JSON.stringify(item))
+      .join("\n");
+
+    // Write to the file
+    await fs.writeFile(outputPath, jsonlContent, "utf-8");
+    console.log(`✅ Successfully wrote results to ${outputPath}`);
+  } catch (error) {
+    console.error(`Error writing to JSONL file:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Main function to run the training set generation
  */
 async function start() {
-  console.log("🚀 Starting...");
+  console.log("🚀 Starting Svelte AI Training Set Generator...");
 
   try {
     // Fetch the Svelte documentation
     const svelteDocsContent = await fetchSvelteDocs();
 
     // Parse the documentation into entries
-    const docsEntries = parseSvelteDocs(svelteDocsContent);
+    let docsEntries = parseSvelteDocs(svelteDocsContent);
 
-    // Print the number of entries
-    console.log(`📊 Found ${docsEntries.length} documentation entries.`);
+    // Filter out entries with small content size
+    const validEntries = docsEntries.filter(
+      (entry) => entry.content.length >= MIN_CONTENT_SIZE
+    );
+    console.log(
+      `📊 Found ${docsEntries.length} total entries, ${validEntries.length} valid entries after filtering.`
+    );
 
-    // list entries
-    //console.log(docsEntries.map((entry) => entry.entry));
+    // Limit to the first 10 entries for testing
+    const limitedEntries = validEntries.slice(0, 10);
+    console.log(
+      `🔍 Processing first ${limitedEntries.length} entries for testing.`
+    );
+
+    // Generate question-answer pairs for each entry
+    const results: Array<{ entry: string; qaPairs: QAPair[] }> = [];
+
+    for (const [index, entry] of limitedEntries.entries()) {
+      console.log(
+        `📝 Processing entry ${index + 1}/${limitedEntries.length}: ${
+          entry.entry
+        }`
+      );
+
+      try {
+        const qaPairs = await getQuestionsForEntry(
+          entry.entry,
+          entry.content,
+          3
+        ); // Generate 3 QA pairs per entry
+        console.log(
+          `✓ Generated ${qaPairs.length} QA pairs for ${entry.entry}`
+        );
+
+        results.push({
+          entry: entry.entry,
+          qaPairs,
+        });
+      } catch (error) {
+        console.error(`Error generating QA pairs for ${entry.entry}:`, error);
+        console.log(`⚠️ Skipping entry ${entry.entry} due to error`);
+      }
+    }
+
+    // Write the results to a JSONL file
+    const outputPath = path.join(
+      process.cwd(),
+      "output",
+      "svelte-training-set.jsonl"
+    );
+    await writeToJSONL(outputPath, results);
+
+    console.log("🎉 Training set generation completed successfully!");
   } catch (error) {
     console.error("Error processing Svelte documentation:", error);
     process.exit(1);
   }
 }
 
-// Run the benchmark
+// Run the generation process
 start().catch((error) => {
   console.error("Unhandled error:", error);
   process.exit(1);

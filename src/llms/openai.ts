@@ -27,7 +27,10 @@ export class OpenAIProvider implements LLMProvider {
    * @param prompt The prompt to send to the LLM
    * @returns The generated code
    */
-  async generateCode(prompt: string): Promise<string | null> {
+  async generateResponse(
+    prompt: string,
+    temperature?: number
+  ): Promise<string> {
     try {
       console.log(
         `🤖 Generating code with OpenAI using model: ${this.modelId}...`
@@ -42,7 +45,7 @@ export class OpenAIProvider implements LLMProvider {
           },
           { role: "user", content: prompt },
         ],
-        // temperature: 0.7,
+        temperature: temperature || 0.7,
       });
 
       const generatedCode = completion.choices[0]?.message.content || "";

@@ -19,7 +19,7 @@ export class AnthropicProvider implements LLMProvider {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
     this.client = new Anthropic({ apiKey });
-    this.modelId = modelId || this.availableModels[1]; // Default to claude-3-7-sonnet
+    this.modelId = modelId || this.availableModels[0]; // Default to claude-3-7-sonnet
   }
 
   /**
@@ -27,12 +27,11 @@ export class AnthropicProvider implements LLMProvider {
    * @param prompt The prompt to send to the LLM
    * @returns The generated code
    */
-  async generateCode(prompt: string, temperature?: number): Promise<string> {
+  async generateResponse(
+    prompt: string,
+    temperature?: number
+  ): Promise<string> {
     try {
-      console.log(
-        `🤖 Generating code with Anthropic using model: ${this.modelId}...`
-      );
-
       const completion = await this.client.messages.create({
         model: this.modelId,
         max_tokens: 4000,
