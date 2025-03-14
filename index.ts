@@ -10,7 +10,12 @@ import path from "node:path";
 // Minimum content size (in characters) to consider a documentation page valid
 const MIN_CONTENT_SIZE = 100;
 
-const QUESTIONS_TO_GENERATE = 20;
+// TODO: Allow temperature control
+// TODO: Save to dated file + temperature in filename
+// TODO: Merge utility npm run merge from output/*.jsonl to output/merged.json
+
+// Do multiple runs to generate more diverse data
+const QUESTIONS_TO_GENERATE = 10;
 
 // Paths for resumability
 const INPUT_DIR = path.join(process.cwd(), "input");

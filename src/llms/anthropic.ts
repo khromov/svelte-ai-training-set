@@ -18,7 +18,7 @@ export class AnthropicProvider implements LLMProvider {
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
-    this.client = new Anthropic({ apiKey });
+    this.client = new Anthropic({ apiKey, timeout: 300000 });
     this.modelId = modelId || this.availableModels[0]; // Default to claude-3-7-sonnet
   }
 
@@ -34,7 +34,7 @@ export class AnthropicProvider implements LLMProvider {
     try {
       const completion = await this.client.messages.create({
         model: this.modelId,
-        max_tokens: 8192,
+        max_tokens: 16384,
         messages: [
           {
             role: "user",
