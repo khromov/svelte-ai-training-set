@@ -27,7 +27,7 @@ export class AnthropicProvider implements LLMProvider {
    * @param prompt The prompt to send to the LLM
    * @returns The generated code
    */
-  async generateCode(prompt: string): Promise<string> {
+  async generateCode(prompt: string, temperature?: number): Promise<string> {
     try {
       console.log(
         `🤖 Generating code with Anthropic using model: ${this.modelId}...`
@@ -42,22 +42,16 @@ export class AnthropicProvider implements LLMProvider {
             content: [
               {
                 type: "text",
-                text: `You are an expert Svelte developer. Generate only the Svelte component code requested. Return just the code with no explanation, comments, or markdown.\n\n${prompt}`,
+                text: prompt,
               },
             ],
           },
         ],
-        // temperature: 0.7,
+        temperature: temperature || 0.7,
       });
 
-      const generatedCode = completion.content[0]?.text || "";
-
       // Clean up any markdown code block indicators if present
-      return generatedCode
-        .replace(/\`\`\`svelte\s*/, "")
-        .replace(/\`\`\`html\s*/, "")
-        .replace(/\`\`\`\s*$/, "")
-        .trim();
+      return completion.content[0]?.text || null;
     } catch (error) {
       console.error("Error generating code with Anthropic:", error);
       throw new Error(

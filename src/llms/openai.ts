@@ -27,7 +27,7 @@ export class OpenAIProvider implements LLMProvider {
    * @param prompt The prompt to send to the LLM
    * @returns The generated code
    */
-  async generateCode(prompt: string): Promise<string> {
+  async generateCode(prompt: string): Promise<string | null> {
     try {
       console.log(
         `🤖 Generating code with OpenAI using model: ${this.modelId}...`
@@ -38,8 +38,7 @@ export class OpenAIProvider implements LLMProvider {
         messages: [
           {
             role: "system",
-            content:
-              "You are an expert Svelte developer. Generate only the Svelte component code requested. Return just the code with no explanation, comments, or markdown.",
+            content: "You are a helpful assistant.",
           },
           { role: "user", content: prompt },
         ],
@@ -48,12 +47,7 @@ export class OpenAIProvider implements LLMProvider {
 
       const generatedCode = completion.choices[0]?.message.content || "";
 
-      // Clean up any markdown code block indicators if present
-      return generatedCode
-        .replace(/\`\`\`svelte\s*/, "")
-        .replace(/\`\`\`html\s*/, "")
-        .replace(/\`\`\`\s*$/, "")
-        .trim();
+      return completion.choices[0]?.message.content;
     } catch (error) {
       console.error("Error generating code with OpenAI:", error);
       throw new Error(
