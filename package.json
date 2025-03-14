@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "tsx ./index.ts",
-    "visualize": "tsx ./visualize.ts"
+    "visualize": "tsx ./visualize.ts",
+    "merge": "tsx ./merge.ts"
   },
   "peerDependencies": {
     "typescript": "^5"
