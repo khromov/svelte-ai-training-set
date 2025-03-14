@@ -34,7 +34,7 @@ export class AnthropicProvider implements LLMProvider {
     try {
       const completion = await this.client.messages.create({
         model: this.modelId,
-        max_tokens: 4000,
+        max_tokens: 8192,
         messages: [
           {
             role: "user",
