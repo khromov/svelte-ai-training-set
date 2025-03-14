@@ -10,6 +10,7 @@ import path from "node:path";
 // Minimum content size (in characters) to consider a documentation page valid
 const MIN_CONTENT_SIZE = 100;
 
+// Run specific item, this one failed: 📝 Processing entry 6/84: docs/svelte/01-introduction/xx-reactivity-fundamentals.md
 // TODO: Allow temperature control
 // TODO: Save to dated file + temperature in filename
 // TODO: Merge utility npm run merge from output/*.jsonl to output/merged.json
