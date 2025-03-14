@@ -10,6 +10,8 @@ import path from "node:path";
 // Minimum content size (in characters) to consider a documentation page valid
 const MIN_CONTENT_SIZE = 100;
 
+const QUESTIONS_TO_GENERATE = 10;
+
 /**
  * Fetches the Svelte documentation from the specified URL
  * @returns The Svelte documentation as a string
@@ -144,7 +146,7 @@ async function start() {
         const qaPairs = await getQuestionsForEntry(
           entry.entry,
           entry.content,
-          3
+          QUESTIONS_TO_GENERATE
         ); // Generate 3 QA pairs per entry
         console.log(
           `✓ Generated ${qaPairs.length} QA pairs for ${entry.entry}`
