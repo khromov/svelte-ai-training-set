@@ -3,7 +3,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "tsx ./index.ts"
+    "start": "tsx ./index.ts",
+    "visualize": "tsx ./visualize.ts"
   },
   "peerDependencies": {
     "typescript": "^5"
