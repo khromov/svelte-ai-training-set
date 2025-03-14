@@ -94,66 +94,189 @@ function formatMarkdown(text: string): string {
 }
 
 /**
+ * Convert object to Base64
+ * @param obj Object to convert
+ * @returns Base64 encoded string
+ */
+function objectToBase64(obj: any): string {
+  return Buffer.from(JSON.stringify(obj)).toString("base64");
+}
+
+/**
  * Generates HTML content for the visualization
  * @param groupedEntries Object with source documents as keys and arrays of QA pairs as values
  * @returns HTML content as string
  */
 function generateHtml(groupedEntries: Record<string, QAPairEntry[]>): string {
-  const sources = Object.keys(groupedEntries).sort();
+  // Convert data to Base64 for inclusion in HTML
+  const dataBase64 = objectToBase64(groupedEntries);
 
-  let tabsHtml = "";
-  let tabContentHtml = "";
-
-  // Generate tabs and content
-  sources.forEach((source, index) => {
-    const isActive = index === 0;
-    const sourceId = `source-${index}`;
-    const entries = groupedEntries[source];
-
-    // Create tab
-    tabsHtml += `
-      <button class="tab-button ${isActive ? "active" : ""}" 
-              onclick="openTab(event, '${sourceId}')">
-        ${escapeHtml(source.split("/").pop() || source)}
-      </button>
-    `;
-
-    // Create tab content
-    tabContentHtml += `
-      <div id="${sourceId}" class="tab-content ${isActive ? "active" : ""}">
-        <h2>${escapeHtml(source)}</h2>
-        <div class="qa-list">
-    `;
-
-    // Add QA pairs
-    entries.forEach((entry, qaIndex) => {
-      const qaId = `qa-${index}-${qaIndex}`;
-      tabContentHtml += `
-        <div class="qa-pair">
-          <div class="question" onclick="toggleAnswer('${qaId}')">
-            <div class="question-header">
-              <span class="q-marker">Q:</span>
-              <h3>${escapeHtml(entry.question)}</h3>
-              <span class="toggle-icon">▼</span>
+  // Create JavaScript as a string to be encoded
+  const javascript = `
+    // Decode data from Base64
+    function decodeBase64Data() {
+      const encodedData = "${dataBase64}";
+      return JSON.parse(atob(encodedData));
+    }
+    
+    // Parse the data once
+    const groupedEntries = decodeBase64Data();
+    const sources = Object.keys(groupedEntries).sort();
+    
+    // Generate all the HTML for tabs and content
+    function generateTabsAndContent() {
+      let tabsHtml = '';
+      let tabContentHtml = '';
+      
+      // Generate tabs and content
+      sources.forEach((source, index) => {
+        const isActive = index === 0;
+        const sourceId = \`source-\${index}\`;
+        const entries = groupedEntries[source];
+        
+        // Create tab
+        tabsHtml += \`
+          <button class="tab-button \${isActive ? 'active' : ''}" 
+                  onclick="openTab(event, '\${sourceId}')">
+            \${escapeHtml(source.split('/').pop() || source)}
+          </button>
+        \`;
+        
+        // Create tab content
+        tabContentHtml += \`
+          <div id="\${sourceId}" class="tab-content \${isActive ? 'active' : ''}">
+            <h2>\${escapeHtml(source)}</h2>
+            <div class="qa-list">
+        \`;
+        
+        // Add QA pairs
+        entries.forEach((entry, qaIndex) => {
+          const qaId = \`qa-\${index}-\${qaIndex}\`;
+          tabContentHtml += \`
+            <div class="qa-pair">
+              <div class="question" onclick="toggleAnswer('\${qaId}')">
+                <div class="question-header">
+                  <span class="q-marker">Q:</span>
+                  <h3>\${escapeHtml(entry.question)}</h3>
+                  <span class="toggle-icon">▼</span>
+                </div>
+              </div>
+              <div id="\${qaId}" class="answer">
+                <div class="answer-content">
+                  <span class="a-marker">A:</span>
+                  <div class="answer-text">\${formatMarkdown(entry.answer)}</div>
+                </div>
+              </div>
+            </div>
+          \`;
+        });
+        
+        tabContentHtml += \`
             </div>
           </div>
-          <div id="${qaId}" class="answer">
-            <div class="answer-content">
-              <span class="a-marker">A:</span>
-              <div class="answer-text">${formatMarkdown(entry.answer)}</div>
-            </div>
-          </div>
-        </div>
-      `;
+        \`;
+      });
+      
+      // Insert the generated HTML
+      document.getElementById('tabs-container').innerHTML = tabsHtml;
+      document.getElementById('tab-content-container').innerHTML = tabContentHtml;
+    }
+    
+    // Escape HTML to prevent XSS
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+    
+    // Format markdown in answers
+    function formatMarkdown(text) {
+      // Format code blocks
+      let formatted = text.replace(/\`\`\`([a-z]*)([\s\S]*?)\`\`\`/g, 
+        (_, language, code) => {
+          const langClass = language ? \` class="language-\${language}"\` : '';
+          return \`<pre><code\${langClass}>\${escapeHtml(code.trim())}</code></pre>\`;
+        }
+      );
+      
+      // Format inline code
+      formatted = formatted.replace(/\`([^\`]+)\`/g, 
+        (_, code) => \`<code>\${escapeHtml(code)}</code>\`
+      );
+      
+      // Format paragraphs
+      formatted = formatted.split("\\n\\n").map(para => {
+        // Skip if it's already a pre/code block
+        if (para.startsWith("<pre>")) return para;
+        return \`<p>\${para}</p>\`;
+      }).join("");
+      
+      return formatted;
+    }
+    
+    // Tab switching function
+    function openTab(evt, tabId) {
+      // Hide all tab contents
+      const tabContents = document.getElementsByClassName("tab-content");
+      for (let i = 0; i < tabContents.length; i++) {
+        tabContents[i].classList.remove("active");
+      }
+      
+      // Deactivate all tab buttons
+      const tabButtons = document.getElementsByClassName("tab-button");
+      for (let i = 0; i < tabButtons.length; i++) {
+        tabButtons[i].classList.remove("active");
+      }
+      
+      // Show the selected tab and activate the button
+      document.getElementById(tabId).classList.add("active");
+      evt.currentTarget.classList.add("active");
+    }
+    
+    // Toggle answer visibility
+    function toggleAnswer(answerId) {
+      const answer = document.getElementById(answerId);
+      answer.classList.toggle("expanded");
+      
+      // Toggle the arrow icon
+      const questionEl = answer.previousElementSibling;
+      const toggleIcon = questionEl.querySelector(".toggle-icon");
+      
+      if (answer.classList.contains("expanded")) {
+        toggleIcon.textContent = "▲";
+        toggleIcon.style.transform = "rotate(0deg)";
+      } else {
+        toggleIcon.textContent = "▼";
+        toggleIcon.style.transform = "rotate(0deg)";
+      }
+    }
+    
+    // Initialize the UI when DOM is ready
+    document.addEventListener("DOMContentLoaded", function() {
+      // Generate all HTML content
+      generateTabsAndContent();
+      
+      // Expand the first QA pair in the active tab
+      setTimeout(() => {
+        const firstTab = document.querySelector(".tab-content.active");
+        if (firstTab) {
+          const firstQA = firstTab.querySelector(".qa-pair");
+          if (firstQA) {
+            const answerId = firstQA.querySelector(".answer").id;
+            toggleAnswer(answerId);
+          }
+        }
+      }, 100);
     });
+  `;
 
-    tabContentHtml += `
-        </div>
-      </div>
-    `;
-  });
+  // Encode JavaScript to Base64
+  const jsBase64 = Buffer.from(javascript).toString("base64");
 
-  // Create complete HTML
+  // Create complete HTML with Base64-encoded JavaScript
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -349,6 +472,13 @@ function generateHtml(groupedEntries: Record<string, QAPairEntry[]>): string {
       font-size: 0.9rem;
       text-align: center;
     }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      font-size: 18px;
+      color: var(--text-color);
+    }
   </style>
 </head>
 <body>
@@ -357,63 +487,31 @@ function generateHtml(groupedEntries: Record<string, QAPairEntry[]>): string {
     <p>Interactive viewer for the Svelte AI Training Set</p>
   </header>
   
-  <div class="tabs">
-    ${tabsHtml}
+  <div id="tabs-container" class="tabs">
+    <div class="loading">Loading tabs...</div>
   </div>
   
-  ${tabContentHtml}
+  <div id="tab-content-container">
+    <div class="loading">Loading content...</div>
+  </div>
   
   <div class="meta-info">
     <p>Generated on ${new Date().toLocaleString()}</p>
   </div>
   
   <script>
-    function openTab(evt, tabId) {
-      // Hide all tab contents
-      const tabContents = document.getElementsByClassName("tab-content");
-      for (let i = 0; i < tabContents.length; i++) {
-        tabContents[i].classList.remove("active");
-      }
+    // Decode and execute the Base64-encoded JavaScript
+    (function() {
+      const base64Code = "${jsBase64}";
+      const decodedCode = atob(base64Code);
       
-      // Deactivate all tab buttons
-      const tabButtons = document.getElementsByClassName("tab-button");
-      for (let i = 0; i < tabButtons.length; i++) {
-        tabButtons[i].classList.remove("active");
-      }
+      // Create a new script element
+      const scriptElement = document.createElement('script');
+      scriptElement.textContent = decodedCode;
       
-      // Show the selected tab and activate the button
-      document.getElementById(tabId).classList.add("active");
-      evt.currentTarget.classList.add("active");
-    }
-    
-    function toggleAnswer(answerId) {
-      const answer = document.getElementById(answerId);
-      answer.classList.toggle("expanded");
-      
-      // Toggle the arrow icon
-      const questionEl = answer.previousElementSibling;
-      const toggleIcon = questionEl.querySelector(".toggle-icon");
-      
-      if (answer.classList.contains("expanded")) {
-        toggleIcon.textContent = "▲";
-        toggleIcon.style.transform = "rotate(0deg)";
-      } else {
-        toggleIcon.textContent = "▼";
-        toggleIcon.style.transform = "rotate(0deg)";
-      }
-    }
-    
-    // Expand the first QA pair in the active tab
-    document.addEventListener("DOMContentLoaded", function() {
-      const firstTab = document.querySelector(".tab-content.active");
-      if (firstTab) {
-        const firstQA = firstTab.querySelector(".qa-pair");
-        if (firstQA) {
-          const answerId = firstQA.querySelector(".answer").id;
-          toggleAnswer(answerId);
-        }
-      }
-    });
+      // Append it to the document
+      document.body.appendChild(scriptElement);
+    })();
   </script>
 </body>
 </html>`;
