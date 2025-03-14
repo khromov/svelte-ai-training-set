@@ -10,7 +10,7 @@ import path from "node:path";
 // Minimum content size (in characters) to consider a documentation page valid
 const MIN_CONTENT_SIZE = 100;
 
-const QUESTIONS_TO_GENERATE = 25;
+const QUESTIONS_TO_GENERATE = 20;
 
 // Paths for resumability
 const INPUT_DIR = path.join(process.cwd(), "input");

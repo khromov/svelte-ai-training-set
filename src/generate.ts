@@ -76,8 +76,6 @@ questions about Svelte development. Each question should be challenging but answ
 from the provided documentation. Feel free to use large parts of the documentation and answer at length
 with many code examples. 
 
-Create several questions relating to a each concept, to aid in validation and test datasets.
-
 Focus on questions that:
 - Cover key concepts from the documentation
 - Include practical code examples where appropriate
