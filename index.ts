@@ -95,6 +95,11 @@ async function readSvelteDocs(filePath: string): Promise<string> {
 function parseSvelteDocs(
   docsContent: string
 ): Array<{ entry: string; content: string }> {
+  if (!docsContent || typeof docsContent !== "string") {
+    console.warn("Invalid documentation content provided to parser");
+    return [];
+  }
+
   // Split by the ## docs/ delimiter
   const parts = docsContent.split(/^## (docs\/[^\n]+)/m);
 
@@ -102,12 +107,21 @@ function parseSvelteDocs(
 
   // Skip the first part (it's empty or doesn't start with ## docs/)
   for (let i = 1; i < parts.length; i += 2) {
-    if (i + 1 < parts.length) {
-      entries.push({
-        entry: parts[i],
-        content: parts[i + 1].trim(),
-      });
+    if (i + 1 < parts.length && parts[i].trim()) {
+      const entry = parts[i].trim();
+      const content = parts[i + 1].trim();
+
+      if (entry && content) {
+        entries.push({ entry, content });
+      }
     }
+  }
+
+  // Log a warning if no entries were found
+  if (entries.length === 0) {
+    console.warn(
+      "No documentation entries found - check format of the source document"
+    );
   }
 
   return entries;
