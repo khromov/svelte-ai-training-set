@@ -22,7 +22,6 @@ const QUESTIONS_TO_GENERATE = 10;
 const INPUT_DIR = path.join(process.cwd(), "input");
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 const SVELTE_DOC_PATH = path.join(INPUT_DIR, "svelte.md");
-const CURRENT_PROGRESS_PATH = path.join(OUTPUT_DIR, "current.txt");
 
 /**
  * Ensures the required directories exist
@@ -203,42 +202,42 @@ async function writeToJSONL(
 }
 
 /**
- * Saves the current progress to a file
- * @param currentIndex The current index being processed
+ * Reads the existing JSONL file and counts the number of questions per entry
+ * @param outputPath The path to the JSONL file
+ * @returns A map of entry paths to the number of questions they have
  */
-async function saveProgress(currentIndex: number): Promise<void> {
+async function getExistingQuestionCounts(outputPath: string): Promise<Map<string, number>> {
+  const questionCounts = new Map<string, number>();
+  
   try {
-    await fs.writeFile(CURRENT_PROGRESS_PATH, currentIndex.toString(), "utf-8");
+    // Check if the file exists
+    await fs.access(outputPath);
+    
+    // Read the file content
+    const content = await fs.readFile(outputPath, 'utf-8');
+    
+    // Split into lines and parse each line
+    const lines = content.split('\n').filter(line => line.trim() !== '');
+    
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        
+        // Increment the count for this entry source
+        const count = questionCounts.get(entry.source) || 0;
+        questionCounts.set(entry.source, count + 1);
+      } catch (error) {
+        console.warn(`Warning: Could not parse line in JSONL file: ${line}`);
+      }
+    }
+    
+    console.log(`📊 Found ${lines.length} existing QA pairs across ${questionCounts.size} entries`);
   } catch (error) {
-    console.error("Error saving progress:", error);
-    // Continue processing even if we can't save progress
+    // If the file doesn't exist or there's another error, return an empty map
+    console.log(`📊 No existing output file found or couldn't read it: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-/**
- * Reads the current progress from the file
- * @returns The current index or null if no progress file exists
- */
-async function readProgress(): Promise<number | null> {
-  try {
-    const content = await fs.readFile(CURRENT_PROGRESS_PATH, "utf-8");
-    const index = parseInt(content.trim(), 10);
-    return isNaN(index) ? null : index;
-  } catch (error) {
-    // File doesn't exist or other error
-    return null;
-  }
-}
-
-/**
- * Clears the progress file
- */
-async function clearProgress(): Promise<void> {
-  try {
-    await fs.unlink(CURRENT_PROGRESS_PATH);
-  } catch (error) {
-    // File doesn't exist or other error, can be ignored
-  }
+  
+  return questionCounts;
 }
 
 /**
@@ -271,45 +270,44 @@ async function start() {
     // Output file path
     const outputPath = path.join(OUTPUT_DIR, "svelte-training-set.jsonl");
 
-    // Check for existing progress
-    const startIndex = await readProgress();
-    const shouldAppend = startIndex !== null;
+    // Get counts of existing questions per entry
+    const existingCounts = await getExistingQuestionCounts(outputPath);
 
-    if (startIndex !== null) {
-      console.log(`🔄 Resuming from entry index ${startIndex}`);
-    } else {
-      console.log(`🆕 Starting a new processing run`);
-    }
+    // Filter entries that need more questions
+    const entriesToProcess = validEntries.filter(entry => {
+      const existingCount = existingCounts.get(entry.entry) || 0;
+      return existingCount < QUESTIONS_TO_GENERATE;
+    });
 
-    // Process entries starting from the saved index or from 0
-    for (
-      let i = startIndex !== null ? startIndex : 0;
-      i < validEntries.length;
-      i++
-    ) {
-      const entry = validEntries[i];
+    console.log(`📊 Found ${entriesToProcess.length} entries that need more questions`);
+
+    // Process each entry that needs more questions
+    for (let i = 0; i < entriesToProcess.length; i++) {
+      const entry = entriesToProcess[i];
+      const existingCount = existingCounts.get(entry.entry) || 0;
+      const questionsNeeded = QUESTIONS_TO_GENERATE - existingCount;
+      
       console.log(
-        `📝 Processing entry ${i + 1}/${validEntries.length}: ${entry.entry}`
+        `📝 Processing entry ${i + 1}/${entriesToProcess.length}: ${entry.entry} (generating ${questionsNeeded} more questions)`
       );
 
-      // Save current progress
-      await saveProgress(i);
-
       try {
+        // Only generate the number of questions needed
         const qaPairs = await getQuestionsForEntry(
           entry.entry,
           entry.content,
-          QUESTIONS_TO_GENERATE
+          questionsNeeded
         );
         console.log(
           `✓ Generated ${qaPairs.length} QA pairs for ${entry.entry}`
         );
 
-        // Write each entry immediately to avoid losing progress
+        // Write to file (always append if the file exists)
+        const fileExists = existingCounts.size > 0;
         await writeToJSONL(
           outputPath,
           [{ entry: entry.entry, qaPairs }],
-          shouldAppend || i > 0 // Append if resuming or not the first entry
+          fileExists
         );
       } catch (error) {
         console.error(`Error generating QA pairs for ${entry.entry}:`, error);
@@ -317,8 +315,6 @@ async function start() {
       }
     }
 
-    // Clear progress file when done
-    await clearProgress();
     console.log("🎉 Training set generation completed successfully!");
   } catch (error) {
     console.error("Error processing Svelte documentation:", error);

@@ -5,7 +5,9 @@
   "scripts": {
     "start": "tsx ./index.ts",
     "visualize": "tsx ./visualize.ts",
-    "merge": "tsx ./merge.ts"
+    "merge": "tsx ./merge.ts",
+    "convert-openai": "tsx ./convert-openai.ts",
+    "convert-unsloth": "tsx ./convert-unsloth.ts"
   },
   "peerDependencies": {
     "typescript": "^5"
