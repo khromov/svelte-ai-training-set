@@ -18,7 +18,7 @@ export class AnthropicProvider implements LLMProvider {
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY environment variable is required");
     }
-    this.client = new Anthropic({ apiKey, timeout: 300000 });
+    this.client = new Anthropic({ apiKey, timeout: 900000 });
     this.modelId = modelId || this.availableModels[0]; // Default to claude-3-7-sonnet
   }
 
