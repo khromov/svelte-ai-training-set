@@ -1,3 +1,4 @@
+* Use BATCH processing
 * Add Svelte 5 Preprompt for correct examples 
 * OR ask the model to only directly quote the documentation.
 * Ask the model to ONLY quote direct code examples from the docs.

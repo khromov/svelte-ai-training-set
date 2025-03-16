@@ -77,6 +77,8 @@ from the provided documentation. Feel free to use large parts of the documentati
 with many code examples, however, you may ONLY use direct code examples from the documentation, you may NEVER invent
 new code examples - this is crucial!
 
+Use \`\`\`svelte code blocks to highlight code examples, and use \`\`\` to mark the end of the code block.
+
 Focus on questions that:
 - Cover key concepts from the documentation
 - Include practical code examples where appropriate
