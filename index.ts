@@ -1,7 +1,7 @@
 // Load environment variables from .env file
 import "dotenv/config";
 
-import { getQuestionsForEntry } from "./src/generate";
+import { getQuestionsForEntry, batchProcessEntries } from "./src/generate";
 import type { QAPair } from "./src/generate";
 import process from "node:process";
 import fs from "node:fs/promises";
@@ -11,6 +11,8 @@ import path from "node:path";
 const MIN_CONTENT_SIZE = 100;
 
 const QUESTIONS_TO_GENERATE = 10;
+// Maximum number of entries to process in a single batch
+const MAX_BATCH_SIZE = 50;
 
 // Paths for resumability
 const INPUT_DIR = path.join(process.cwd(), "input");
@@ -304,47 +306,104 @@ async function start() {
     // Check if the output file already exists before we start
     const outputFileExistsBeforeProcessing = await fileExists(outputPath);
 
-    // Process each entry that needs more questions
-    for (let i = 0; i < entriesToProcess.length; i++) {
-      const entry = entriesToProcess[i];
-      const existingCount = existingCounts.get(entry.entry) || 0;
-      const questionsNeeded = QUESTIONS_TO_GENERATE - existingCount;
+    // Process entries in batches instead of one by one
+    if (entriesToProcess.length > 0) {
+      const providerName = process.env.PROVIDER?.toLowerCase() || "anthropic";
 
-      console.log(
-        `📝 Processing entry ${i + 1}/${entriesToProcess.length}: ${
-          entry.entry
-        } (generating ${questionsNeeded} more questions)`
-      );
-
-      try {
-        // Only generate the number of questions needed
-        const qaPairs = await getQuestionsForEntry(
-          entry.entry,
-          entry.content,
-          questionsNeeded
-        );
+      if (providerName === "anthropic") {
         console.log(
-          `✓ Generated ${qaPairs.length} QA pairs for ${entry.entry}`
+          `🚀 Using Anthropic Batch API for processing entries in batches of ${MAX_BATCH_SIZE}`
         );
 
-        // For the first entry, if no file exists, create it
-        // For subsequent entries, always append
-        const shouldAppend = outputFileExistsBeforeProcessing || i > 0;
+        for (let i = 0; i < entriesToProcess.length; i += MAX_BATCH_SIZE) {
+          const entriesBatch = entriesToProcess.slice(i, i + MAX_BATCH_SIZE);
 
-        // Write to file (append for existing files or after first write)
-        await writeToJSONL(
-          outputPath,
-          [{ entry: entry.entry, qaPairs }],
-          shouldAppend
-        );
+          console.log(
+            `📦 Processing batch ${
+              Math.floor(i / MAX_BATCH_SIZE) + 1
+            } of ${Math.ceil(
+              entriesToProcess.length / MAX_BATCH_SIZE
+            )}, containing ${entriesBatch.length} entries`
+          );
 
-        // Mark that we've now written to the file
-        if (!outputFileExistsBeforeProcessing && i === 0) {
-          console.log(`✓ Created new output file at ${outputPath}`);
+          const batchRequests = entriesBatch.map((entry) => {
+            const existingCount = existingCounts.get(entry.entry) || 0;
+            const questionsNeeded = QUESTIONS_TO_GENERATE - existingCount;
+
+            return {
+              entry: entry.entry,
+              content: entry.content,
+              questionsNeeded,
+            };
+          });
+
+          try {
+            // Process the batch using the Anthropic Batch API
+            const entriesWithQaPairs = await batchProcessEntries(batchRequests);
+
+            // For the first batch, if no file exists, create it
+            // For subsequent batches, always append
+            const shouldAppend = outputFileExistsBeforeProcessing || i > 0;
+
+            // Write to file (append for existing files or after first write)
+            await writeToJSONL(outputPath, entriesWithQaPairs, shouldAppend);
+
+            // Mark that we've now written to the file
+            if (!outputFileExistsBeforeProcessing && i === 0) {
+              console.log(`✓ Created new output file at ${outputPath}`);
+            }
+          } catch (error) {
+            console.error(`Error processing batch of entries:`, error);
+            console.log(`⚠️ Skipping batch due to error`);
+          }
         }
-      } catch (error) {
-        console.error(`Error generating QA pairs for ${entry.entry}:`, error);
-        console.log(`⚠️ Skipping entry ${entry.entry} due to error`);
+      } else {
+        // Fall back to the original one-by-one processing for other providers
+        for (let i = 0; i < entriesToProcess.length; i++) {
+          const entry = entriesToProcess[i];
+          const existingCount = existingCounts.get(entry.entry) || 0;
+          const questionsNeeded = QUESTIONS_TO_GENERATE - existingCount;
+
+          console.log(
+            `📝 Processing entry ${i + 1}/${entriesToProcess.length}: ${
+              entry.entry
+            } (generating ${questionsNeeded} more questions)`
+          );
+
+          try {
+            // Only generate the number of questions needed
+            const qaPairs = await getQuestionsForEntry(
+              entry.entry,
+              entry.content,
+              questionsNeeded
+            );
+            console.log(
+              `✓ Generated ${qaPairs.length} QA pairs for ${entry.entry}`
+            );
+
+            // For the first entry, if no file exists, create it
+            // For subsequent entries, always append
+            const shouldAppend = outputFileExistsBeforeProcessing || i > 0;
+
+            // Write to file (append for existing files or after first write)
+            await writeToJSONL(
+              outputPath,
+              [{ entry: entry.entry, qaPairs }],
+              shouldAppend
+            );
+
+            // Mark that we've now written to the file
+            if (!outputFileExistsBeforeProcessing && i === 0) {
+              console.log(`✓ Created new output file at ${outputPath}`);
+            }
+          } catch (error) {
+            console.error(
+              `Error generating QA pairs for ${entry.entry}:`,
+              error
+            );
+            console.log(`⚠️ Skipping entry ${entry.entry} due to error`);
+          }
+        }
       }
     }
 
