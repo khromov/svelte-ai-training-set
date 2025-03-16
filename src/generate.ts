@@ -32,8 +32,7 @@ export async function getQuestionsForEntry(
   content: string,
   count: number = 5
 ): Promise<QAPair[]> {
-  // Get the provider from environment variable or default to Anthropic
-  const providerName = process.env.PROVIDER?.toLowerCase() || "anthropic";
+  const providerName = "anthropic";
 
   try {
     // Get the LLM provider

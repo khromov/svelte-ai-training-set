@@ -308,7 +308,7 @@ async function start() {
 
     // Process entries in batches instead of one by one
     if (entriesToProcess.length > 0) {
-      const providerName = process.env.PROVIDER?.toLowerCase() || "anthropic";
+      const providerName = "anthropic";
 
       if (providerName === "anthropic") {
         console.log(
