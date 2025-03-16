@@ -1,4 +1,5 @@
-* Add Svelte 5 Preprompt for correct examples
+* Add Svelte 5 Preprompt for correct examples 
+* OR ask the model to only directly quote the documentation.
 * Ask the model to ONLY quote direct code examples from the docs.
 * "Wash" the data to remove incorrect examples
 * Allow temperature control
