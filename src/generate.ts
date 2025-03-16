@@ -74,7 +74,8 @@ You are an expert in Svelte 5 and web development. Based on the following Svelte
 create ${count} question and answer pairs that would be useful for training an AI to answer 
 questions about Svelte development. Each question should be challenging but answerable
 from the provided documentation. Feel free to use large parts of the documentation and answer at length
-with many code examples. 
+with many code examples, however, you may ONLY use direct code examples from the documentation, you may NEVER invent
+new code examples - this is crucial!
 
 Focus on questions that:
 - Cover key concepts from the documentation
