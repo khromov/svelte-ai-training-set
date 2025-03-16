@@ -10,12 +10,6 @@ import path from "node:path";
 // Minimum content size (in characters) to consider a documentation page valid
 const MIN_CONTENT_SIZE = 100;
 
-// Run missing items, that have less than QUESTIONS_TO_GENERATE questions? or just 0
-// TODO: Allow temperature control
-// TODO: Save to dated file + temperature in filename
-// TODO: Merge utility npm run merge from output/*.jsonl to output/merged.json
-
-// Do multiple runs to generate more diverse data
 const QUESTIONS_TO_GENERATE = 10;
 
 // Paths for resumability
@@ -206,23 +200,25 @@ async function writeToJSONL(
  * @param outputPath The path to the JSONL file
  * @returns A map of entry paths to the number of questions they have
  */
-async function getExistingQuestionCounts(outputPath: string): Promise<Map<string, number>> {
+async function getExistingQuestionCounts(
+  outputPath: string
+): Promise<Map<string, number>> {
   const questionCounts = new Map<string, number>();
-  
+
   try {
     // Check if the file exists
     await fs.access(outputPath);
-    
+
     // Read the file content
-    const content = await fs.readFile(outputPath, 'utf-8');
-    
+    const content = await fs.readFile(outputPath, "utf-8");
+
     // Split into lines and parse each line
-    const lines = content.split('\n').filter(line => line.trim() !== '');
-    
+    const lines = content.split("\n").filter((line) => line.trim() !== "");
+
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
-        
+
         // Increment the count for this entry source
         const count = questionCounts.get(entry.source) || 0;
         questionCounts.set(entry.source, count + 1);
@@ -230,13 +226,19 @@ async function getExistingQuestionCounts(outputPath: string): Promise<Map<string
         console.warn(`Warning: Could not parse line in JSONL file: ${line}`);
       }
     }
-    
-    console.log(`📊 Found ${lines.length} existing QA pairs across ${questionCounts.size} entries`);
+
+    console.log(
+      `📊 Found ${lines.length} existing QA pairs across ${questionCounts.size} entries`
+    );
   } catch (error) {
     // If the file doesn't exist or there's another error, return an empty map
-    console.log(`📊 No existing output file found or couldn't read it: ${error instanceof Error ? error.message : String(error)}`);
+    console.log(
+      `📊 No existing output file found or couldn't read it: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
-  
+
   return questionCounts;
 }
 
@@ -274,21 +276,25 @@ async function start() {
     const existingCounts = await getExistingQuestionCounts(outputPath);
 
     // Filter entries that need more questions
-    const entriesToProcess = validEntries.filter(entry => {
+    const entriesToProcess = validEntries.filter((entry) => {
       const existingCount = existingCounts.get(entry.entry) || 0;
       return existingCount < QUESTIONS_TO_GENERATE;
     });
 
-    console.log(`📊 Found ${entriesToProcess.length} entries that need more questions`);
+    console.log(
+      `📊 Found ${entriesToProcess.length} entries that need more questions`
+    );
 
     // Process each entry that needs more questions
     for (let i = 0; i < entriesToProcess.length; i++) {
       const entry = entriesToProcess[i];
       const existingCount = existingCounts.get(entry.entry) || 0;
       const questionsNeeded = QUESTIONS_TO_GENERATE - existingCount;
-      
+
       console.log(
-        `📝 Processing entry ${i + 1}/${entriesToProcess.length}: ${entry.entry} (generating ${questionsNeeded} more questions)`
+        `📝 Processing entry ${i + 1}/${entriesToProcess.length}: ${
+          entry.entry
+        } (generating ${questionsNeeded} more questions)`
       );
 
       try {

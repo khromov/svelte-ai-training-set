@@ -1,0 +1,4 @@
+* Add Svelte 5 Preprompt for correct examples
+* Allow temperature control
+* Save to dated file + temperature in filename
+* Merge utility npm run merge from output/*.jsonl to output/merged.json
