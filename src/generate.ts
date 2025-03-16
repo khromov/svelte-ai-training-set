@@ -1,5 +1,6 @@
 import { getLLMProvider } from "./llms";
 import type { LLMProvider } from "./llms";
+import { AnthropicProvider } from "./llms/anthropic";
 
 /**
  * Interface for a Question-Answer pair
@@ -7,6 +8,15 @@ import type { LLMProvider } from "./llms";
 export interface QAPair {
   question: string;
   answer: string;
+}
+
+/**
+ * Interface for a batch processing request
+ */
+export interface BatchProcessRequest {
+  entry: string;
+  content: string;
+  questionsNeeded: number;
 }
 
 /**
@@ -55,21 +65,198 @@ export async function getQuestionsForEntry(
 }
 
 /**
- * Generates question/answer pairs using the specified LLM provider
- *
- * @param provider The LLM provider to use
- * @param entry The documentation entry path
- * @param content The content of the documentation entry
- * @param count Number of QA pairs to generate
- * @returns The raw text response from the LLM
+ * Sanitize an entry path to create a valid custom_id
+ * Only allows alphanumeric characters, underscores, and hyphens
+ * Truncates if longer than 64 characters
  */
-async function generateQAPairsWithProvider(
-  provider: LLMProvider,
-  entry: string,
-  content: string,
-  count: number
-): Promise<string> {
-  const prompt = `
+function sanitizeCustomId(entry: string, index: number): string {
+  // Replace all non-allowed characters with underscores
+  const sanitized = entry.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/__+/g, "_"); // Collapse multiple underscores
+
+  // Create a custom ID that includes the index to ensure uniqueness
+  const customId = `entry_${sanitized}_${index}`;
+
+  // Truncate if too long (max 64 chars)
+  if (customId.length > 64) {
+    // Keep the beginning, the index, and enough context
+    const prefix = "entry_";
+    const suffix = `_${index}`;
+    const maxMiddleLength = 64 - prefix.length - suffix.length;
+
+    // Take some characters from the beginning and end of sanitized
+    const halfLength = Math.floor(maxMiddleLength / 2);
+    const start = sanitized.substring(0, halfLength);
+    const end = sanitized.substring(sanitized.length - halfLength);
+
+    return `${prefix}${start}_${end}${suffix}`.substring(0, 64);
+  }
+
+  return customId;
+}
+
+/**
+ * Process multiple entries in a batch using the Anthropic Batch API
+ * @param requests Array of batch process requests
+ * @returns Array of entries with their QA pairs
+ */
+export async function batchProcessEntries(
+  requests: BatchProcessRequest[]
+): Promise<Array<{ entry: string; qaPairs: QAPair[] }>> {
+  try {
+    // Check if we have any requests to process
+    if (requests.length === 0) {
+      return [];
+    }
+
+    // Get the Anthropic provider
+    const provider = (await getLLMProvider("anthropic")) as AnthropicProvider;
+    console.log(
+      `🤖 Using Anthropic Batch API to process ${requests.length} entries`
+    );
+
+    // Create an ID map to track which custom_id corresponds to which original entry
+    const idMap = new Map<string, { entry: string; questionsNeeded: number }>();
+
+    // Create batch requests
+    const batchRequests = requests.map((request, index) => {
+      // Create a valid custom_id that conforms to Anthropic's requirements
+      const customId = sanitizeCustomId(request.entry, index);
+
+      // Store the mapping for later retrieval
+      idMap.set(customId, {
+        entry: request.entry,
+        questionsNeeded: request.questionsNeeded,
+      });
+
+      const prompt = createQAPrompt(
+        request.entry,
+        request.content,
+        request.questionsNeeded
+      );
+
+      console.log(`📝 Custom ID: ${customId}`);
+
+      // Only include custom_id and params in the request (no request_data field)
+      return {
+        custom_id: customId,
+        params: {
+          model: provider.getModelIdentifier(),
+          max_tokens: 16384,
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+        },
+      };
+    });
+
+    // Submit the batch
+    console.log(
+      `📤 Submitting batch of ${batchRequests.length} requests to Anthropic...`
+    );
+    const batchResult = await provider.createBatch(batchRequests);
+    console.log(`✅ Batch created with ID: ${batchResult.id}`);
+
+    // Poll for completion
+    let batchStatus = await provider.getBatchStatus(batchResult.id);
+
+    console.log(
+      `⏳ Batch processing status: ${batchStatus.processing_status} (${batchStatus.request_counts.processing} processing, ${batchStatus.request_counts.succeeded} succeeded, ${batchStatus.request_counts.errored} errored)`
+    );
+
+    while (batchStatus.processing_status === "in_progress") {
+      // Wait for 30 seconds before checking again
+      console.log(
+        `⏳ Waiting for batch to complete (${batchStatus.request_counts.processing} requests still processing)...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 30000));
+
+      batchStatus = await provider.getBatchStatus(batchResult.id);
+      console.log(
+        `⏳ Batch processing status: ${batchStatus.processing_status} (${batchStatus.request_counts.processing} processing, ${batchStatus.request_counts.succeeded} succeeded, ${batchStatus.request_counts.errored} errored)`
+      );
+    }
+
+    // Process results
+    if (batchStatus.results_url) {
+      console.log(`📥 Batch processing complete. Fetching results...`);
+      const results = await provider.getBatchResults(batchStatus.results_url);
+
+      // Map results back to entries
+      const entriesWithQaPairs: Array<{ entry: string; qaPairs: QAPair[] }> =
+        [];
+
+      for (const result of results) {
+        if (result.result.type === "succeeded") {
+          try {
+            // Look up the original entry from our ID map
+            const entryInfo = idMap.get(result.custom_id);
+
+            if (!entryInfo) {
+              console.warn(
+                `⚠️ Could not find entry info for result with custom_id: ${result.custom_id}`
+              );
+              continue;
+            }
+
+            // Parse the response content
+            const responseText = result.result.message.content[0].text;
+            const qaPairs = parseQAPairsFromText(responseText);
+
+            console.log(
+              `✓ Successfully parsed ${qaPairs.length} QA pairs for entry ${entryInfo.entry}`
+            );
+
+            entriesWithQaPairs.push({
+              entry: entryInfo.entry,
+              qaPairs,
+            });
+          } catch (error) {
+            console.error(`Error processing batch result:`, error);
+          }
+        } else if (result.result.type === "errored") {
+          console.error(
+            `❌ Error in batch request ${result.custom_id}: ${JSON.stringify(
+              result.result.error
+            )}`
+          );
+        } else {
+          console.warn(
+            `⚠️ Unexpected result type for ${result.custom_id}: ${result.result.type}`
+          );
+        }
+      }
+
+      console.log(
+        `📊 Successfully processed ${entriesWithQaPairs.length} entries from batch`
+      );
+      return entriesWithQaPairs;
+    } else {
+      throw new Error(
+        `Batch completed but no results URL provided. Status: ${batchStatus.processing_status}`
+      );
+    }
+  } catch (error) {
+    console.error(`Error in batch processing:`, error);
+    throw new Error(
+      `Failed to process batch: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+/**
+ * Creates a prompt for QA generation
+ * @param entry Documentation entry path
+ * @param content Documentation content
+ * @param count Number of QA pairs to generate
+ * @returns Formatted prompt
+ */
+function createQAPrompt(entry: string, content: string, count: number): string {
+  return `
 You are an expert in Svelte 5 and web development. Based on the following Svelte documentation, 
 create ${count} question and answer pairs that would be useful for training an AI to answer 
 questions about Svelte development. Each question should be challenging but answerable
@@ -100,7 +287,24 @@ A2: [Detailed answer with code examples when relevant]
 
 ...and so on until Q${count}.
 `;
+}
 
+/**
+ * Generates question/answer pairs using the specified LLM provider
+ *
+ * @param provider The LLM provider to use
+ * @param entry The documentation entry path
+ * @param content The content of the documentation entry
+ * @param count Number of QA pairs to generate
+ * @returns The raw text response from the LLM
+ */
+async function generateQAPairsWithProvider(
+  provider: LLMProvider,
+  entry: string,
+  content: string,
+  count: number
+): Promise<string> {
+  const prompt = createQAPrompt(entry, content, count);
   return await provider.generateResponse(prompt);
 }
 
