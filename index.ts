@@ -11,10 +11,6 @@ import path from "node:path";
 const MIN_CONTENT_SIZE = 100;
 
 const QUESTIONS_TO_GENERATE = 10;
-// Maximum number of entries to process in a single batch
-const MAX_BATCH_SIZE = 50;
-// Set this to true to only process the first batch while testing
-const PROCESS_FIRST_BATCH_ONLY = true;
 
 // Paths for resumability
 const INPUT_DIR = path.join(process.cwd(), "input");
@@ -305,68 +301,46 @@ async function start() {
       `📊 Found ${entriesToProcess.length} entries that need more questions`
     );
 
-    // If in testing mode, only take the first batch of entries
-    if (PROCESS_FIRST_BATCH_ONLY) {
-      const totalEntries = entriesToProcess.length;
-      entriesToProcess = entriesToProcess.slice(0, MAX_BATCH_SIZE);
-      console.log(
-        `🧪 Testing mode: Processing only first batch (${entriesToProcess.length} of ${totalEntries} entries)`
-      );
-    }
-
     // Check if the output file already exists before we start
     const outputFileExistsBeforeProcessing = await fileExists(outputPath);
 
-    // Process entries in batches instead of one by one
+    // Process entries if we have any
     if (entriesToProcess.length > 0) {
       const providerName = process.env.PROVIDER?.toLowerCase() || "anthropic";
 
       if (providerName === "anthropic") {
         console.log(
-          `🚀 Using Anthropic Batch API for processing entries in batches of ${MAX_BATCH_SIZE}`
+          `🚀 Using Anthropic Batch API to process all ${entriesToProcess.length} entries in a single batch`
         );
 
-        for (let i = 0; i < entriesToProcess.length; i += MAX_BATCH_SIZE) {
-          const entriesBatch = entriesToProcess.slice(i, i + MAX_BATCH_SIZE);
+        // Create batch requests for all entries
+        const batchRequests = entriesToProcess.map((entry) => {
+          const existingCount = existingCounts.get(entry.entry) || 0;
+          const questionsNeeded = QUESTIONS_TO_GENERATE - existingCount;
 
-          console.log(
-            `📦 Processing batch ${
-              Math.floor(i / MAX_BATCH_SIZE) + 1
-            } of ${Math.ceil(
-              entriesToProcess.length / MAX_BATCH_SIZE
-            )}, containing ${entriesBatch.length} entries`
+          return {
+            entry: entry.entry,
+            content: entry.content,
+            questionsNeeded,
+          };
+        });
+
+        try {
+          // Process all entries in a single batch using the Anthropic Batch API
+          const entriesWithQaPairs = await batchProcessEntries(batchRequests);
+
+          // Write to file
+          await writeToJSONL(
+            outputPath,
+            entriesWithQaPairs,
+            outputFileExistsBeforeProcessing
           );
 
-          const batchRequests = entriesBatch.map((entry) => {
-            const existingCount = existingCounts.get(entry.entry) || 0;
-            const questionsNeeded = QUESTIONS_TO_GENERATE - existingCount;
-
-            return {
-              entry: entry.entry,
-              content: entry.content,
-              questionsNeeded,
-            };
-          });
-
-          try {
-            // Process the batch using the Anthropic Batch API
-            const entriesWithQaPairs = await batchProcessEntries(batchRequests);
-
-            // For the first batch, if no file exists, create it
-            // For subsequent batches, always append
-            const shouldAppend = outputFileExistsBeforeProcessing || i > 0;
-
-            // Write to file (append for existing files or after first write)
-            await writeToJSONL(outputPath, entriesWithQaPairs, shouldAppend);
-
-            // Mark that we've now written to the file
-            if (!outputFileExistsBeforeProcessing && i === 0) {
-              console.log(`✓ Created new output file at ${outputPath}`);
-            }
-          } catch (error) {
-            console.error(`Error processing batch of entries:`, error);
-            console.log(`⚠️ Skipping batch due to error`);
+          if (!outputFileExistsBeforeProcessing) {
+            console.log(`✓ Created new output file at ${outputPath}`);
           }
+        } catch (error) {
+          console.error(`Error processing entries: ${error}`);
         }
       } else {
         // Fall back to the original one-by-one processing for other providers
