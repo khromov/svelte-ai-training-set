@@ -115,16 +115,18 @@ export async function batchProcessEntries(
     );
 
     // Create an ID map to track which custom_id corresponds to which original entry
-    const idMap = new Map<string, string>();
+    const idMap = new Map<string, { entry: string; questionsNeeded: number }>();
 
     // Create batch requests
     const batchRequests = requests.map((request, index) => {
       // Create a valid custom_id that conforms to Anthropic's requirements
       const customId = sanitizeCustomId(request.entry, index);
-      console.log(`📝 Custom ID: ${customId}`);
 
       // Store the mapping for later retrieval
-      idMap.set(customId, request.entry);
+      idMap.set(customId, {
+        entry: request.entry,
+        questionsNeeded: request.questionsNeeded,
+      });
 
       const prompt = createQAPrompt(
         request.entry,
@@ -132,12 +134,11 @@ export async function batchProcessEntries(
         request.questionsNeeded
       );
 
+      console.log(`📝 Custom ID: ${customId}`);
+
+      // Only include custom_id and params in the request (no request_data field)
       return {
         custom_id: customId,
-        request_data: {
-          entry: request.entry,
-          questionsNeeded: request.questionsNeeded,
-        },
         params: {
           model: provider.getModelIdentifier(),
           max_tokens: 16384,
@@ -190,19 +191,12 @@ export async function batchProcessEntries(
       for (const result of results) {
         if (result.result.type === "succeeded") {
           try {
-            // Extract the entry from request_data or from our id map as fallback
-            let entry = batchRequests.find(
-              (req) => req.custom_id === result.custom_id
-            )?.request_data?.entry;
+            // Look up the original entry from our ID map
+            const entryInfo = idMap.get(result.custom_id);
 
-            // If request_data is missing, use our ID map
-            if (!entry && idMap.has(result.custom_id)) {
-              entry = idMap.get(result.custom_id);
-            }
-
-            if (!entry) {
+            if (!entryInfo) {
               console.warn(
-                `⚠️ Could not find entry for result with custom_id: ${result.custom_id}`
+                `⚠️ Could not find entry info for result with custom_id: ${result.custom_id}`
               );
               continue;
             }
@@ -212,11 +206,11 @@ export async function batchProcessEntries(
             const qaPairs = parseQAPairsFromText(responseText);
 
             console.log(
-              `✓ Successfully parsed ${qaPairs.length} QA pairs for entry ${entry}`
+              `✓ Successfully parsed ${qaPairs.length} QA pairs for entry ${entryInfo.entry}`
             );
 
             entriesWithQaPairs.push({
-              entry,
+              entry: entryInfo.entry,
               qaPairs,
             });
           } catch (error) {

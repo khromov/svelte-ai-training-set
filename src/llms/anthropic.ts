@@ -4,7 +4,6 @@ import { Anthropic } from "@anthropic-ai/sdk";
 // Batch API interfaces
 export interface AnthropicBatchRequest {
   custom_id: string;
-  request_data?: any; // Store additional data here that we want to recover later
   params: {
     model: string;
     max_tokens: number;
