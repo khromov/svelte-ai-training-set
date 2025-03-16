@@ -13,6 +13,8 @@ const MIN_CONTENT_SIZE = 100;
 const QUESTIONS_TO_GENERATE = 10;
 // Maximum number of entries to process in a single batch
 const MAX_BATCH_SIZE = 50;
+// Set this to true to only process the first batch while testing
+const PROCESS_FIRST_BATCH_ONLY = true;
 
 // Paths for resumability
 const INPUT_DIR = path.join(process.cwd(), "input");
@@ -294,7 +296,7 @@ async function start() {
     const existingCounts = await getExistingQuestionCounts(outputPath);
 
     // Filter entries that need more questions
-    const entriesToProcess = validEntries.filter((entry) => {
+    let entriesToProcess = validEntries.filter((entry) => {
       const existingCount = existingCounts.get(entry.entry) || 0;
       return existingCount < QUESTIONS_TO_GENERATE;
     });
@@ -303,12 +305,21 @@ async function start() {
       `📊 Found ${entriesToProcess.length} entries that need more questions`
     );
 
+    // If in testing mode, only take the first batch of entries
+    if (PROCESS_FIRST_BATCH_ONLY) {
+      const totalEntries = entriesToProcess.length;
+      entriesToProcess = entriesToProcess.slice(0, MAX_BATCH_SIZE);
+      console.log(
+        `🧪 Testing mode: Processing only first batch (${entriesToProcess.length} of ${totalEntries} entries)`
+      );
+    }
+
     // Check if the output file already exists before we start
     const outputFileExistsBeforeProcessing = await fileExists(outputPath);
 
     // Process entries in batches instead of one by one
     if (entriesToProcess.length > 0) {
-      const providerName = "anthropic";
+      const providerName = process.env.PROVIDER?.toLowerCase() || "anthropic";
 
       if (providerName === "anthropic") {
         console.log(
