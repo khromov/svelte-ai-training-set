@@ -32,7 +32,8 @@ export async function getQuestionsForEntry(
   content: string,
   count: number = 5
 ): Promise<QAPair[]> {
-  const providerName = "anthropic";
+  // Get the provider from environment variable or default to Anthropic
+  const providerName = process.env.PROVIDER?.toLowerCase() || "anthropic";
 
   try {
     // Get the LLM provider
@@ -64,6 +65,36 @@ export async function getQuestionsForEntry(
 }
 
 /**
+ * Sanitize an entry path to create a valid custom_id
+ * Only allows alphanumeric characters, underscores, and hyphens
+ * Truncates if longer than 64 characters
+ */
+function sanitizeCustomId(entry: string, index: number): string {
+  // Replace all non-allowed characters with underscores
+  const sanitized = entry.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/__+/g, "_"); // Collapse multiple underscores
+
+  // Create a custom ID that includes the index to ensure uniqueness
+  const customId = `entry_${sanitized}_${index}`;
+
+  // Truncate if too long (max 64 chars)
+  if (customId.length > 64) {
+    // Keep the beginning, the index, and enough context
+    const prefix = "entry_";
+    const suffix = `_${index}`;
+    const maxMiddleLength = 64 - prefix.length - suffix.length;
+
+    // Take some characters from the beginning and end of sanitized
+    const halfLength = Math.floor(maxMiddleLength / 2);
+    const start = sanitized.substring(0, halfLength);
+    const end = sanitized.substring(sanitized.length - halfLength);
+
+    return `${prefix}${start}_${end}${suffix}`.substring(0, 64);
+  }
+
+  return customId;
+}
+
+/**
  * Process multiple entries in a batch using the Anthropic Batch API
  * @param requests Array of batch process requests
  * @returns Array of entries with their QA pairs
@@ -83,9 +114,18 @@ export async function batchProcessEntries(
       `🤖 Using Anthropic Batch API to process ${requests.length} entries`
     );
 
+    // Create an ID map to track which custom_id corresponds to which original entry
+    const idMap = new Map<string, string>();
+
     // Create batch requests
     const batchRequests = requests.map((request, index) => {
-      const customId = `entry-${encodeURIComponent(request.entry)}-${index}`;
+      // Create a valid custom_id that conforms to Anthropic's requirements
+      const customId = sanitizeCustomId(request.entry, index);
+      console.log(`📝 Custom ID: ${customId}`);
+
+      // Store the mapping for later retrieval
+      idMap.set(customId, request.entry);
+
       const prompt = createQAPrompt(
         request.entry,
         request.content,
@@ -150,14 +190,19 @@ export async function batchProcessEntries(
       for (const result of results) {
         if (result.result.type === "succeeded") {
           try {
-            // Extract the entry and questions from the custom_id and request_data
-            const requestData = batchRequests.find(
+            // Extract the entry from request_data or from our id map as fallback
+            let entry = batchRequests.find(
               (req) => req.custom_id === result.custom_id
-            )?.request_data;
+            )?.request_data?.entry;
 
-            if (!requestData) {
+            // If request_data is missing, use our ID map
+            if (!entry && idMap.has(result.custom_id)) {
+              entry = idMap.get(result.custom_id);
+            }
+
+            if (!entry) {
               console.warn(
-                `⚠️ Could not find request data for result with custom_id: ${result.custom_id}`
+                `⚠️ Could not find entry for result with custom_id: ${result.custom_id}`
               );
               continue;
             }
@@ -167,11 +212,11 @@ export async function batchProcessEntries(
             const qaPairs = parseQAPairsFromText(responseText);
 
             console.log(
-              `✓ Successfully parsed ${qaPairs.length} QA pairs for entry ${requestData.entry}`
+              `✓ Successfully parsed ${qaPairs.length} QA pairs for entry ${entry}`
             );
 
             entriesWithQaPairs.push({
-              entry: requestData.entry,
+              entry,
               qaPairs,
             });
           } catch (error) {
