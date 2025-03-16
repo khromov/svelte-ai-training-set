@@ -1,4 +1,6 @@
 * Add Svelte 5 Preprompt for correct examples
+* Ask the model to ONLY quote direct code examples from the docs.
+* "Wash" the data to remove incorrect examples
 * Allow temperature control
 * Save to dated file + temperature in filename
 * Merge utility npm run merge from output/*.jsonl to output/merged.json
