@@ -140,6 +140,20 @@ async function ensureDirectoryExists(dirPath: string): Promise<void> {
 }
 
 /**
+ * Checks if a file exists
+ * @param filePath Path to the file
+ * @returns True if the file exists, false otherwise
+ */
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Writes question-answer pairs to a JSONL file
  * @param outputPath Path to the output file
  * @param entries Array of entries with question-answer pairs
@@ -166,27 +180,29 @@ async function writeToJSONL(
       .map((item) => JSON.stringify(item))
       .join("\n");
 
+    // Check if the file actually exists on disk
+    const isFileOnDisk = await fileExists(outputPath);
+
     // Write to the file
-    if (append) {
-      // Add a newline if the file exists and is not empty
-      try {
-        const stats = await fs.stat(outputPath);
-        if (stats.size > 0) {
-          await fs.appendFile(outputPath, "\n" + jsonlContent, "utf-8");
-        } else {
-          await fs.writeFile(outputPath, jsonlContent, "utf-8");
-        }
-      } catch (error) {
-        // File doesn't exist, write it
+    if (append && isFileOnDisk) {
+      // Read the file to check if it's empty
+      const content = await fs.readFile(outputPath, "utf-8");
+
+      if (content.trim().length > 0) {
+        // File has content, append with a newline prefix
+        await fs.appendFile(outputPath, "\n" + jsonlContent, "utf-8");
+      } else {
+        // File exists but is empty, write without a newline prefix
         await fs.writeFile(outputPath, jsonlContent, "utf-8");
       }
     } else {
+      // File doesn't exist or we're not appending, create a new file
       await fs.writeFile(outputPath, jsonlContent, "utf-8");
     }
 
     console.log(
       `✅ Successfully ${
-        append ? "appended" : "wrote"
+        append && isFileOnDisk ? "appended" : "wrote"
       } results to ${outputPath}`
     );
   } catch (error) {
@@ -285,6 +301,9 @@ async function start() {
       `📊 Found ${entriesToProcess.length} entries that need more questions`
     );
 
+    // Check if the output file already exists before we start
+    const outputFileExistsBeforeProcessing = await fileExists(outputPath);
+
     // Process each entry that needs more questions
     for (let i = 0; i < entriesToProcess.length; i++) {
       const entry = entriesToProcess[i];
@@ -308,13 +327,21 @@ async function start() {
           `✓ Generated ${qaPairs.length} QA pairs for ${entry.entry}`
         );
 
-        // Write to file (always append if the file exists)
-        const fileExists = existingCounts.size > 0;
+        // For the first entry, if no file exists, create it
+        // For subsequent entries, always append
+        const shouldAppend = outputFileExistsBeforeProcessing || i > 0;
+
+        // Write to file (append for existing files or after first write)
         await writeToJSONL(
           outputPath,
           [{ entry: entry.entry, qaPairs }],
-          fileExists
+          shouldAppend
         );
+
+        // Mark that we've now written to the file
+        if (!outputFileExistsBeforeProcessing && i === 0) {
+          console.log(`✓ Created new output file at ${outputPath}`);
+        }
       } catch (error) {
         console.error(`Error generating QA pairs for ${entry.entry}:`, error);
         console.log(`⚠️ Skipping entry ${entry.entry} due to error`);
